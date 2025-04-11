@@ -1,0 +1,6 @@
+{
+    "C_Cpp.errorSquiggles": "enabledIfIncludesResolve",
+    "C_Cpp.vcFormat.indent.accessSpecifiers": true,
+    "editor.suggest.showStructs": true,
+    "editor.suggest.showConstructors": true
+}
