@@ -6,20 +6,20 @@
 #include <ArduinoJson.h>
 #include "eepromStorage.h"
 
-class WebServer {
+class WebServer
+{
 public:
     WebServer();
 
-    void begin();                // Инициализация
-    void handleLoop();           // Вызывать в loop для отправки изменений
+    void begin();      // Инициализация
+    void handleLoop(); // Вызывать в loop для отправки изменений
 
-    void enable();               // Включить точку доступа и сервер
-    void disable();              // Отключить точку доступа и сервер
-    bool isEnabled() const;      // Проверить состояние
+    void enable();          // Включить точку доступа и сервер
+    void disable();         // Отключить точку доступа и сервер
+    bool isEnabled() const; // Проверить состояние
 
     void sendSbusFailUpdate(unsigned int fails);
     void setSettingsCallback(std::function<void()> callback); // Новый метод для коллбэка
-
 
 private:
     void setupWebSocket();
@@ -30,7 +30,7 @@ private:
 
     bool serverActive = false;
 
-    std::function<void()> settingsCallback;  // Коллбэк для передачи настроек наружу
+    std::function<void()> settingsCallback; // Коллбэк для передачи настроек наружу
     unsigned long lastHeap = 0;
     unsigned long lastSbusFails = 0;
 };
@@ -148,6 +148,7 @@ const char html[] PROGMEM = R"rawliteral(
         </div>
         <div id="heapInfo">Память: ?</div>
         <div id="sbusFail">Ошибок sbus: ?</div>
+        <div>Uptime: <span id="uptime">—</span></div>
       </div>
     
       <div class="card">
@@ -240,6 +241,16 @@ const char html[] PROGMEM = R"rawliteral(
                 html += `<div class='channel'>Канал ${i}: ${data["ch" + i] ?? "—"}</div>`;
               }
               document.getElementById("channels").innerHTML = html;
+            }
+            if ("uptime" in data) {
+                const uptimeEl = document.getElementById("uptime");
+                if (uptimeEl) {
+                const seconds = Number(data.uptime);
+                const minutes = Math.floor(seconds / 60);
+                const hours = Math.floor(minutes / 60);
+                const pretty = `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+                uptimeEl.textContent = pretty;
+                }
             }
             if ("heap" in data) document.getElementById("heapInfo").innerText = "Память: " + data.heap + " байт";
             if ("sbusFail" in data) document.getElementById("sbusFail").innerText = "Ошибок sbus: " + data.sbusFail;

@@ -253,6 +253,8 @@ void WebServer::sendSbusFailUpdate(unsigned int fails)
   webSocket.broadcastTXT(json);
 }
 
+unsigned long lastUptimeSent = 0;
+
 void WebServer::handleLoop()
 {
   if (!serverActive)
@@ -275,5 +277,17 @@ void WebServer::handleLoop()
   {
     memcpy(lastSbus, sbus, sizeof(sbus));
     sendChannelUpdate();
+  }
+
+  unsigned long now = millis();
+  if (now - lastUptimeSent > 1000) {
+    lastUptimeSent = now;
+
+    JsonDocument doc;
+    doc["uptime"] = now / 1000; // в секундах
+
+    String json;
+    serializeJson(doc, json);
+    webSocket.broadcastTXT(json);
   }
 }
