@@ -5,7 +5,13 @@
 
 EepromStorage::EepromStorage() 
 {
-    EEPROM.begin(sizeof(Settings));    
+    EEPROM.begin(sizeof(Settings));
+
+    if(EEPROM.percentUsed() < 0) 
+    {
+        Settings s;
+        writeSettings(s);
+    }
 }
 
 void EepromStorage::readSettings(Settings &sets) {

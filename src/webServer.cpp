@@ -9,7 +9,7 @@ const char *password = "00000000";
 ESP8266WebServer server(80);
 WebSocketsServer webSocket = WebSocketsServer(81); // WebSocket на порту 81
 
-int lastSbus[8] = {0};
+int lastSbus[7] = {0};
 
 const char html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
@@ -73,7 +73,8 @@ const char html[] PROGMEM = R"rawliteral(
     <h3>Выходы</h3>
     <div>frontHazardLights: <select id="frontHazardLights" name="frontHazardLights"></select></div>
     <div>rearHazardLights: <select id="rearHazardLights" name="rearHazardLights"></select></div>
-    <div>headlightFog: <select id="headlightFog" name="headlightFog"></select></div>
+    <div>foglight: <select id="foglight" name="foglight"></select></div>
+    <div>headlight: <select id="headlight" name="headlight"></select></div>
     <div>stopLights: <select id="stopLights" name="stopLights"></select></div>
     <div>rearLights: <select id="rearLights" name="rearLights"></select></div>
 
@@ -93,7 +94,7 @@ const char html[] PROGMEM = R"rawliteral(
         // Обновление каналов
         if ("ch0" in data) {
           let html = "";
-          for (let i = 0; i < 8; i++) {
+          for (let i = 0; i < 7; i++) {
             const val = data["ch" + i];
             html += `<div class='channel'>Канал ${i}: ${val !== undefined ? val : "—"}</div>`;
           }
@@ -163,18 +164,19 @@ const char html[] PROGMEM = R"rawliteral(
       const channelFields = ["throttle", "gearbox", "frontLock", "rearLock", "enableServer"];
       channelFields.forEach(name => {
         const sel = document.getElementById(`${name}Channel`);
-        sel.innerHTML = `<option value="-1">Не используется</option>` + [...Array(8)].map((_, i) =>
+        sel.innerHTML = `<option value="-1">Не используется</option>` + [...Array(7)].map((_, i) =>
           `<option value="${i}">Канал ${i}</option>`).join("");
       });
 
-      const outputs = ["d4", "d5", "d12", "d13", "d15"];
-      const outFields = ["frontHazardLights", "rearHazardLights", "headlightFog", "stopLights", "rearLights"];
+      const outputs = ["d4", "d5", "d12", "d13", "d14", "d15"];
+      const outFields = ["frontHazardLights", "rearHazardLights", "foglight", "headlight", "stopLights", "rearLights"];
       outFields.forEach(id => {
         const sel = document.getElementById(id);
         outputs.forEach(pin => {
           const opt = document.createElement("option");
           opt.value = pin;
-          opt.text = pin + (pin === "d15" ? "+d2" : "");
+          opt.text = pin;
+          //opt.selected = true;
           sel.appendChild(opt);
         });
       });
@@ -324,7 +326,8 @@ void WebServer::handleWSMessage(uint8_t clientNum, uint8_t *data, size_t len)
 
     sets.frontHazardLights = getPinFromString(doc["frontHazardLights"] | "d4");
     sets.rearHazardLights = getPinFromString(doc["rearHazardLights"] | "d5");
-    sets.headlightFog = getPinFromString(doc["headlightFog"] | "d15");
+    sets.foglight = getPinFromString(doc["foglight"] | "d14");
+    sets.headlight = getPinFromString(doc["headlight"] | "d15");
     sets.stopLights = getPinFromString(doc["stopLights"] | "d12");
     sets.rearLights = getPinFromString(doc["rearLights"] | "d13");
 
@@ -354,8 +357,6 @@ void WebServer::handleWSMessage(uint8_t clientNum, uint8_t *data, size_t len)
     JsonDocument doc;
     doc["type"] = "params";
 
-    doc["type"] = "params";
-
     doc["throttleChannel"] = sets.throttle.channel;
     doc["throttleInverted"] = sets.throttle.inverted;
     doc["throttleChannelCenterPoint"] = sets.throttle.centerPoint;
@@ -382,11 +383,12 @@ void WebServer::handleWSMessage(uint8_t clientNum, uint8_t *data, size_t len)
     doc["tailLightPwm"] = sets.tailLightPwm;
     doc["throttleHysteresis"] = sets.throttleHysteresis;
 
-    doc["frontHazardLights"] = sets.frontHazardLights;
-    doc["rearHazardLights"] = sets.rearHazardLights;
-    doc["headlightFog"] = sets.headlightFog;
-    doc["stopLights"] = sets.stopLights;
-    doc["rearLights"] = sets.rearLights;
+    doc["frontHazardLights"] = getStringFromPin(sets.frontHazardLights);
+    doc["rearHazardLights"] = getStringFromPin(sets.rearHazardLights);
+    doc["foglight"] = getStringFromPin(sets.foglight);
+    doc["headlight"] = getStringFromPin(sets.headlight);
+    doc["stopLights"] = getStringFromPin(sets.stopLights);
+    doc["rearLights"] = getStringFromPin(sets.rearLights);
     String out;
     serializeJson(doc, out);
     webSocket.sendTXT(clientNum, out);
@@ -399,7 +401,7 @@ void WebServer::sendChannelUpdate()
     return;
 
   String json = "{";
-  for (int i = 0; i < 8; i++)
+  for (int i = 0; i < 7; i++)
   {
     json += "\"ch" + String(i) + "\":" + String(sbus[i]);
     if (i < 7)
@@ -435,7 +437,7 @@ void WebServer::handleLoop()
   server.handleClient();
 
   bool changed = false;
-  for (int i = 0; i < 8; i++)
+  for (int i = 0; i < 7; i++)
   {
     if (sbus[i] != lastSbus[i])
     {

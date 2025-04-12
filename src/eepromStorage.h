@@ -22,7 +22,8 @@ struct Settings {
 
     int frontHazardLights = 4;  // d4 (например)
     int rearHazardLights = 5;   // d5
-    int headlightFog = 15;      // d15
+    int foglight = 14;      // d14
+    int headlight = 15;      // d15
     int stopLights = 12;        // d12
     int rearLights = 13;        // d13
 };

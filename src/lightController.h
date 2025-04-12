@@ -5,11 +5,12 @@
 #include "eepromStorage.h"
 
 extern Settings sets;
-extern int sbus[8];
+extern int sbus[7];
 
 void setupOutputs();
 
-void operateLights();
+void blinkRearLights();
+void operateHeadLights(bool toggle = false);
 
 void operateThrottle();
 void operateHazardLights();

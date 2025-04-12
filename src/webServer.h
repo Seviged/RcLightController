@@ -35,8 +35,7 @@ private:
     unsigned long lastSbusFails = 0;
 };
 
-extern int sbus[8];
-extern int outputBindings[4];
+extern int sbus[7];
 extern Settings sets;
 
 #endif

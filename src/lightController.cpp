@@ -2,59 +2,94 @@
 
 void setupOutputs()
 {
-    pinMode(sets.frontHazardLights, OUTPUT);
-    pinMode(sets.rearHazardLights, OUTPUT);
-    pinMode(sets.headlightFog, OUTPUT);
-    pinMode(sets.stopLights, OUTPUT);
-    pinMode(sets.rearLights, OUTPUT);
-
-    digitalWrite(sets.headlightFog, HIGH);
+    if (sets.frontHazardLights >= 0)
+        pinMode(sets.frontHazardLights, OUTPUT);
+    if (sets.rearHazardLights >= 0)
+        pinMode(sets.rearHazardLights, OUTPUT);
+    if (sets.headlight >= 0)
+        pinMode(sets.headlight, OUTPUT);
+    if (sets.foglight >= 0)
+        pinMode(sets.foglight, OUTPUT);
+    if (sets.stopLights >= 0)
+        pinMode(sets.stopLights, OUTPUT);
+    if (sets.rearLights >= 0)
+        pinMode(sets.rearLights, OUTPUT);
 }
 
+bool headLightEnable = true;
+
+void blinkRearLights()
+{
+    digitalWrite(sets.rearLights, HIGH);
+    delay(300);
+    digitalWrite(sets.rearLights, LOW);
+}
+
+void operateHeadLights(bool toggle)
+{
+    if (toggle)
+    {
+        headLightEnable = !headLightEnable;
+    }
+
+    if (headLightEnable)
+    {
+        digitalWrite(sets.headlight, HIGH);
+        digitalWrite(sets.foglight, HIGH);
+    }
+    else
+    {
+        digitalWrite(sets.headlight, LOW);
+        digitalWrite(sets.foglight, LOW);
+    }
+}
 
 unsigned long stopTimeout = 0;
 bool stopFlag = false;
 bool reverseFlag = false;
 
-
 void operateThrottle()
 {
+    if (sets.throttle.channel < 0)
+        return;
+
     int minCenterTh = sets.throttle.centerPoint - sets.throttleHysteresis;
     int maxCenterTh = sets.throttle.centerPoint + sets.throttleHysteresis;
 
     int currentValue = sbus[sets.throttle.channel];
-    if(sets.throttle.inverted) currentValue = 2048 - currentValue;
-    //Serial.println(sets.throttle.channel);
-    //Serial.println(sets.stopLights);
-    if(currentValue < minCenterTh)
+    if (sets.throttle.inverted)
+        currentValue = 2048 - currentValue;
+    // Serial.println(sets.throttle.channel);
+    // Serial.println(sets.stopLights);
+    if (currentValue < minCenterTh)
     {
-        //reverse
+        // reverse
         stopFlag = false;
         stopTimeout = 0;
         reverseFlag = true;
     }
-    else if(currentValue > maxCenterTh)
+    else if (currentValue > maxCenterTh)
     {
-        //forward
+        // forward
         stopFlag = false;
         stopTimeout = 0;
         reverseFlag = false;
     }
     else
     {
-        //center
+        // center
         stopFlag = true;
         reverseFlag = false;
     }
 
-    if(stopFlag)
+    if (stopFlag)
     {
-        if(stopTimeout == 0)
+        if (stopTimeout == 0)
         {
             analogWrite(sets.stopLights, 255);
             stopTimeout = millis() + sets.stopLightDelay;
         }
-        else if(millis() > stopTimeout)
+        else if (millis() > stopTimeout)
         {
             analogWrite(sets.stopLights, sets.tailLightPwm);
         }
@@ -64,7 +99,7 @@ void operateThrottle()
         analogWrite(sets.stopLights, sets.tailLightPwm);
     }
 
-    if(reverseFlag)
+    if (reverseFlag)
     {
         digitalWrite(sets.rearLights, HIGH);
     }
@@ -72,8 +107,6 @@ void operateThrottle()
     {
         digitalWrite(sets.rearLights, LOW);
     }
-
-
 }
 
 unsigned long hazardOnTimeout = 0;
@@ -83,21 +116,27 @@ bool blinkRear = false;
 
 void operateHazardLights()
 {
-    int centerGb = sets.gearbox.centerPoint;
-    if(sets.gearbox.inverted) centerGb = 2048 - centerGb;
+    if (sets.gearbox.channel < 0 || sets.frontLock.channel < 0 || sets.rearLock.channel < 0)
+        return;
 
-    int centerFlock = sets.frontLock.centerPoint;
-    if(sets.frontLock.inverted) centerFlock = 2048 - centerFlock;
+    int gbValue = sbus[sets.gearbox.channel];
+    if (sets.gearbox.inverted)
+        gbValue = 2048 - gbValue;
 
-    int centerRlock = sets.rearLock.centerPoint;
-    if(sets.rearLock.inverted) centerRlock = 2048 - centerRlock;
+    int frontLockValue = sbus[sets.frontLock.channel];
+    if (sets.frontLock.inverted)
+        frontLockValue = 2048 - frontLockValue;
 
-    if(centerGb < 800)
+    int rearLockValue = sbus[sets.rearLock.channel];
+    if (sets.rearLock.inverted)
+        rearLockValue = 2048 - rearLockValue;
+
+    if (gbValue < sets.gearbox.centerPoint)
     {
         blinkFront = false;
         blinkRear = false;
-        //first
-        if(centerFlock < 800)
+        // first
+        if (frontLockValue < sets.frontLock.centerPoint)
         {
             digitalWrite(sets.frontHazardLights, HIGH);
         }
@@ -106,7 +145,7 @@ void operateHazardLights()
             digitalWrite(sets.frontHazardLights, LOW);
         }
 
-        if(centerRlock < 800)
+        if (rearLockValue < sets.rearLock.centerPoint)
         {
             digitalWrite(sets.rearHazardLights, HIGH);
         }
@@ -117,10 +156,10 @@ void operateHazardLights()
     }
     else
     {
-        //second
-        if(centerFlock < 800)
+        // second
+        if (frontLockValue < sets.frontLock.centerPoint)
         {
-            //digitalWrite(sets.frontHazardLights, LOW);
+            // digitalWrite(sets.frontHazardLights, LOW);
             blinkFront = true;
         }
         else
@@ -129,9 +168,9 @@ void operateHazardLights()
             digitalWrite(sets.frontHazardLights, HIGH);
         }
 
-        if(centerRlock < 800)
+        if (rearLockValue < sets.rearLock.centerPoint)
         {
-            //digitalWrite(sets.rearHazardLights, LOW);
+            // digitalWrite(sets.rearHazardLights, LOW);
             blinkRear = true;
         }
         else
@@ -143,30 +182,32 @@ void operateHazardLights()
 
     bool burnNow = false;
     unsigned long curTime = millis();
-    if(hazardOnTimeout > 0 && curTime > hazardOnTimeout)
+    if (hazardOnTimeout > 0 && curTime > hazardOnTimeout)
     {
         hazardOnTimeout = 0;
         hazardOffTimeout = sets.blinkDelayOff;
         burnNow = false;
     }
-    else if(hazardOffTimeout > 0 && curTime > hazardOffTimeout)
+    else if (hazardOffTimeout > 0 && curTime > hazardOffTimeout)
     {
         hazardOffTimeout = 0;
         hazardOnTimeout = sets.blinkDelayOn;
         burnNow = true;
     }
 
-
-    if(blinkFront)
+    if (blinkFront)
     {
-        if(burnNow) digitalWrite(sets.frontHazardLights, HIGH);
-        else digitalWrite(sets.frontHazardLights, LOW);
+        if (burnNow)
+            digitalWrite(sets.frontHazardLights, HIGH);
+        else
+            digitalWrite(sets.frontHazardLights, LOW);
     }
 
-    if(blinkRear)
+    if (blinkRear)
     {
-        if(burnNow) digitalWrite(sets.rearHazardLights, HIGH);
-        else digitalWrite(sets.rearHazardLights, LOW);
+        if (burnNow)
+            digitalWrite(sets.rearHazardLights, HIGH);
+        else
+            digitalWrite(sets.rearHazardLights, LOW);
     }
-    
 }
