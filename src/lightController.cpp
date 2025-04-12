@@ -17,31 +17,59 @@ void setupOutputs()
 }
 
 bool headLightEnable = true;
+bool fogLightEnable = true;
+
 
 void blinkRearLights()
 {
+    if(sets.rearLights < 0) return;
     digitalWrite(sets.rearLights, HIGH);
     delay(300);
     digitalWrite(sets.rearLights, LOW);
+}
+
+void _operateLights(bool enabled, int pin)
+{
+    if(pin < 0) return;
+
+    if (enabled)
+    {
+        digitalWrite(pin, HIGH);
+    }
+    else
+    {
+        digitalWrite(pin, LOW);
+    }
 }
 
 void operateHeadLights(bool toggle)
 {
     if (toggle)
     {
-        headLightEnable = !headLightEnable;
+        if(fogLightEnable && headLightEnable)
+        {
+            fogLightEnable = false;
+            headLightEnable = true;
+        }
+        else if(headLightEnable)
+        {
+            fogLightEnable = true;
+            headLightEnable = false;
+        }
+        else if(fogLightEnable)
+        {
+            fogLightEnable = false;
+            headLightEnable = false;
+        }
+        else
+        {
+            fogLightEnable = true;
+            headLightEnable = true;
+        }
     }
 
-    if (headLightEnable)
-    {
-        digitalWrite(sets.headlight, HIGH);
-        digitalWrite(sets.foglight, HIGH);
-    }
-    else
-    {
-        digitalWrite(sets.headlight, LOW);
-        digitalWrite(sets.foglight, LOW);
-    }
+    _operateLights(headLightEnable, sets.headlight);
+    _operateLights(fogLightEnable, sets.foglight);
 }
 
 unsigned long stopTimeout = 0;
