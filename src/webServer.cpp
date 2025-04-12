@@ -229,7 +229,7 @@ void WebServer::sendChannelUpdate()
   for (int i = 0; i < 7; i++)
   {
     json += "\"ch" + String(i) + "\":" + String(sbus[i]);
-    if (i < 7)
+    if (i < 6)
       json += ",";
   }
   json += "}";
