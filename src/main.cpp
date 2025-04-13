@@ -6,11 +6,11 @@ int sbus[7] = {0};
 
 #include "webServer.h"
 WebServer serv;
-unsigned int sbusFails = 0;
+long sbusFails = 0;
 
 EepromStorage store;
 Settings sets;
-uint8_t frame[24]; // SBUS received bytes. 1st byte of 25-byte frame is always 0x0F, and is not stored
+uint8_t frame[24] = {0}; // SBUS received bytes. 1st byte of 25-byte frame is always 0x0F, and is not stored
 
 int channel(int ch)
 {                          // extract 11-bit channel[ch] value from frame. ch 0-15
@@ -41,16 +41,14 @@ unsigned long enableTimerServer = 0;
 bool triggerStarted = false;
 
 // параметры фильтра
-const unsigned long HOLD_TIME = 4000; // 4 секунды
-const unsigned long LIGHTS_HOLD_TIME = 2000; // 2 секунды
+const unsigned long HOLD_TIME = 3000; // 3 секунды
+const unsigned long LIGHTS_HOLD_TIME = 900; // 0.9 секунды
 
 void enableServerFunc()
 {
-  if (serv.isEnabled())
-    return;
-
-  if(sets.enableServer.channel < 0)
+  if(sets.enableServer.channel < 0 && !serv.isEnabled())
   {
+    Serial.println(sets.enableServer.channel);
     Serial.println("ENABLING SERVER...");
       serv.enable(); // включаем сервер
       Serial.println("SERVER ENABLED!!!");
@@ -69,43 +67,59 @@ void enableServerFunc()
       Serial.println("Start hold (debounced)");
     }
 
-    if (millis() - enableTimerServer >= HOLD_TIME)
+    if (millis() - enableTimerServer >= HOLD_TIME && !serv.isEnabled())
     {
       Serial.println("ENABLING SERVER...");
-      blinkRearLights();
+      blinkRearLights(500);
       serv.enable(); // включаем сервер
       Serial.println("SERVER ENABLED!!!");
     }
   }
 
-  // если значение опустилось ниже нижнего порога — сбрасываем
-  if (ch < sets.enableServer.centerPoint)
+  if (millis() - enableTimerServer >= LIGHTS_HOLD_TIME && triggerStarted)
   {
+    blinkRearLights(300);
+  }
+
+  // если значение опустилось ниже нижнего порога — сбрасываем
+  if (ch < sets.enableServer.centerPoint && enableTimerServer > 0)
+  {
+    if (millis() - enableTimerServer >= LIGHTS_HOLD_TIME && millis() - enableTimerServer < HOLD_TIME)
+    {
+      operateHeadLights(true);
+    }
+
     if (triggerStarted)
       Serial.println("Hold cancelled (debounced)");
     triggerStarted = false;
     enableTimerServer = 0;
-
-    if (millis() - enableTimerServer >= LIGHTS_HOLD_TIME)
-    {
-      operateHeadLights(true);
-    }
   }
 }
 
-void writeSettings()
+void writeSettings(bool erase)
 {
+  if(erase)
+  {
+    store.restoreDefaultSettings();
+    WiFi.forceSleepBegin();
+    wdt_reset();
+    ESP.restart();
+  }
   store.writeSettings(sets);
 }
 
+int failsafeMarker = 0;
+
 void setup()
 {
+  Serial.setRxBufferSize(64);
   Serial.begin(100000, SERIAL_8E2);
   delay(100);
 
+  store.readSettings(sets);
+
   setupOutputs();
 
-  store.readSettings(sets);
   serv.setSettingsCallback(writeSettings);
   delay(300);
 }
@@ -114,6 +128,7 @@ void loop()
 {
   enableServerFunc();
 
+  bool failsafe = false;
   bool frameReceived = false;
   while (Serial.available())
   {
@@ -138,8 +153,9 @@ void loop()
       {
         i += Serial.readBytes(frame + i, min(Serial.available(), 24 - i));
       }
-      delay(1); // Задержка для разгрузки процессора
+      //delay(1); // Задержка для разгрузки процессора
     }
+
     if (i == 24 && frame[23] == 0x000)
     {
       frameReceived = true;
@@ -153,15 +169,35 @@ void loop()
 
   if (frameReceived)
   {
-    // copy first 7 channels received in SBUS frame to CPPM outputs
-    for (int i = 0; i < 7; i++)
+    bool canRead = true;
+    if (frame[22] & 0x08) 
     {
-      sbus[i] = channel(i);
+      failsafeMarker = 4000;
+      //delay(1);
+      canRead = false;
+      failsafe = true;
+    }
+    if (frame[22] & 0x04) 
+    {
+      canRead = false;
+      //++sbusFails;
+    }
+
+    // copy first 7 channels received in SBUS frame to CPPM outputs
+    if(canRead)
+    {
+      for (int i = 0; i < 7; i++)
+      {
+        sbus[i] = channel(i);
+        failsafeMarker = 0;
+      }
     }
   }
+
+  if(failsafeMarker < 4000) ++failsafeMarker;
   operateThrottle();
-  operateHazardLights();
+  operateHazardLights(failsafeMarker > 3000);
   operateHeadLights();
-  serv.sendSbusFailUpdate(sbusFails);
   serv.handleLoop();
+  serv.sendSbusFailUpdate(sbusFails, failsafe);
 }

@@ -1,5 +1,8 @@
 #include "lightController.h"
 
+bool headLightEnable = true;
+bool fogLightEnable = true;
+
 void setupOutputs()
 {
     if (sets.frontHazardLights >= 0)
@@ -14,18 +17,33 @@ void setupOutputs()
         pinMode(sets.stopLights, OUTPUT);
     if (sets.rearLights >= 0)
         pinMode(sets.rearLights, OUTPUT);
+
+    headLightEnable = sets.headlightAtStart;
+    fogLightEnable = sets.foglightAtStart;
 }
 
-bool headLightEnable = true;
-bool fogLightEnable = true;
 
+bool overrideRear = false;
+unsigned long overrideRearTime = 0;
 
-void blinkRearLights()
+void blinkRearLights(int msec)
 {
-    if(sets.rearLights < 0) return;
-    digitalWrite(sets.rearLights, HIGH);
-    delay(300);
-    digitalWrite(sets.rearLights, LOW);
+    if(overrideRear) return;
+
+    if(overrideRearTime > 0)
+    {
+        if(millis() < overrideRearTime)
+        {
+            return;
+        }
+        else
+        {
+            overrideRearTime = 0;
+        }
+    }
+
+    overrideRearTime = millis() + msec;
+    overrideRear = true;
 }
 
 void _operateLights(bool enabled, int pin)
@@ -127,6 +145,21 @@ void operateThrottle()
         analogWrite(sets.stopLights, sets.tailLightPwm);
     }
 
+    if(overrideRear)
+    {
+        if (millis() < overrideRearTime)
+        {
+            digitalWrite(sets.rearLights, HIGH);
+        }
+        else
+        {
+            digitalWrite(sets.rearLights, LOW);
+            overrideRear = false;
+            overrideRearTime = millis() + 300;;
+        }
+        return;
+    }
+
     if (reverseFlag)
     {
         digitalWrite(sets.rearLights, HIGH);
@@ -141,8 +174,9 @@ unsigned long hazardOnTimeout = 0;
 unsigned long hazardOffTimeout = 1;
 bool blinkFront = false;
 bool blinkRear = false;
+bool hazardsBurnNow = false;
 
-void operateHazardLights()
+void operateHazardLights(bool failsafe)
 {
     if (sets.gearbox.channel < 0 || sets.frontLock.channel < 0 || sets.rearLock.channel < 0)
         return;
@@ -208,24 +242,31 @@ void operateHazardLights()
         }
     }
 
-    bool burnNow = false;
+    if(failsafe)
+    {
+        blinkFront = true;
+        blinkRear = true;
+    }
+
     unsigned long curTime = millis();
     if (hazardOnTimeout > 0 && curTime > hazardOnTimeout)
     {
         hazardOnTimeout = 0;
-        hazardOffTimeout = sets.blinkDelayOff;
-        burnNow = false;
+        hazardOffTimeout = curTime + sets.blinkDelayOff;
+        if(failsafe) hazardOffTimeout = curTime + (sets.blinkDelayOff / 2);
+        hazardsBurnNow = false;
     }
     else if (hazardOffTimeout > 0 && curTime > hazardOffTimeout)
     {
         hazardOffTimeout = 0;
-        hazardOnTimeout = sets.blinkDelayOn;
-        burnNow = true;
+        hazardOnTimeout = curTime + sets.blinkDelayOn;
+        if(failsafe) hazardOnTimeout = curTime + (sets.blinkDelayOn / 2);
+        hazardsBurnNow = true;
     }
 
     if (blinkFront)
     {
-        if (burnNow)
+        if (hazardsBurnNow)
             digitalWrite(sets.frontHazardLights, HIGH);
         else
             digitalWrite(sets.frontHazardLights, LOW);
@@ -233,7 +274,7 @@ void operateHazardLights()
 
     if (blinkRear)
     {
-        if (burnNow)
+        if (hazardsBurnNow)
             digitalWrite(sets.rearHazardLights, HIGH);
         else
             digitalWrite(sets.rearHazardLights, LOW);

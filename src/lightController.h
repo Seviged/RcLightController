@@ -9,10 +9,10 @@ extern int sbus[7];
 
 void setupOutputs();
 
-void blinkRearLights();
+void blinkRearLights(int msec);
 void operateHeadLights(bool toggle = false);
 
 void operateThrottle();
-void operateHazardLights();
+void operateHazardLights(bool failsafe);
 
 #endif

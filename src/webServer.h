@@ -18,8 +18,8 @@ public:
     void disable();         // Отключить точку доступа и сервер
     bool isEnabled() const; // Проверить состояние
 
-    void sendSbusFailUpdate(unsigned int fails);
-    void setSettingsCallback(std::function<void()> callback); // Новый метод для коллбэка
+    void sendSbusFailUpdate(long fails, bool failsafe, bool force = false);
+    void setSettingsCallback(std::function<void(bool)> callback); // Новый метод для коллбэка
 
 private:
     void setupWebSocket();
@@ -30,9 +30,18 @@ private:
 
     bool serverActive = false;
 
-    std::function<void()> settingsCallback; // Коллбэк для передачи настроек наружу
+    std::function<void(bool)> settingsCallback; // Коллбэк для передачи настроек наружу
     unsigned long lastHeap = 0;
     unsigned long lastSbusFails = 0;
+    bool isFailsafe = false;
+    long someFails = -1;
+
+    bool saveSettingsFlag = false;
+    bool eraseSettingsFlag = false;
+    bool getMemFlag = false;
+    bool rebootFlag = false;
+    bool disableServerFlag = false;
+    bool updateInitValuesFlag = false;
 };
 
 extern int sbus[7];
@@ -148,6 +157,7 @@ const char html[] PROGMEM = R"rawliteral(
         </div>
         <div id="heapInfo">Память: ?</div>
         <div id="sbusFail">Ошибок sbus: ?</div>
+        <div id="failsafe">Failsafe: ?</div>
         <div>Uptime: <span id="uptime">—</span></div>
       </div>
     
@@ -199,6 +209,10 @@ const char html[] PROGMEM = R"rawliteral(
               Яркость габаритов (0%-100%): <input name="tailLightPwm" type="number" value="100" min="0" max="100">
               Гистерезис газа (ед.): <input name="throttleHysteresis" type="number" value="0" min="-1000" max="1000">
             </div>
+            <div class="form-subgroup">
+              <label><input type="checkbox" name="headlightAtStart">Вкл. ближн. света при запуске</label>
+              <label><input type="checkbox" name="foglightAtStart">Вкл. противотум. фар при запуске</label>
+            </div>
           </div>
     
           <h3>Выходы</h3>
@@ -217,6 +231,7 @@ const char html[] PROGMEM = R"rawliteral(
     
           <div class="btn-group">
             <button type="button" onclick="saveSettings()">Сохранить параметры</button>
+            <button type="button" onclick="resetEeprom()">Вернуть параметры по умолчанию</button>
           </div>
         </form>
       </div>
@@ -230,53 +245,78 @@ const char html[] PROGMEM = R"rawliteral(
       </div>
     
       <script>
-        const ws = new WebSocket("ws://" + location.host + ":81");
-    
+        let ws;
+        let reconnectInterval = 3000; // Интервал переподключения в мс
+
+        function initWebSocket() {
+        ws = new WebSocket("ws://" + location.host + ":81");
+
+        ws.onopen = () => {
+            console.log("WebSocket подключен");
+            ws.send(JSON.stringify({ type: "getParams" }));
+        };
+
         ws.onmessage = function(event) {
-          try {
+            try {
             const data = JSON.parse(event.data);
             if ("ch0" in data) {
-              let html = "";
-              for (let i = 0; i < 7; i++) {
+                let html = "";
+                for (let i = 0; i < 7; i++) {
                 html += `<div class='channel'>Канал ${i}: ${data["ch" + i] ?? "—"}</div>`;
-              }
-              document.getElementById("channels").innerHTML = html;
+                }
+                document.getElementById("channels").innerHTML = html;
             }
             if ("uptime" in data) {
                 const uptimeEl = document.getElementById("uptime");
-                if (uptimeEl) {
                 const seconds = Number(data.uptime);
                 const minutes = Math.floor(seconds / 60);
                 const hours = Math.floor(minutes / 60);
-                const pretty = `${hours}h ${minutes % 60}m ${seconds % 60}s`;
-                uptimeEl.textContent = pretty;
-                }
+                uptimeEl.textContent = `${hours}h ${minutes % 60}m ${seconds % 60}s`;
             }
             if ("heap" in data) document.getElementById("heapInfo").innerText = "Память: " + data.heap + " байт";
             if ("sbusFail" in data) document.getElementById("sbusFail").innerText = "Ошибок sbus: " + data.sbusFail;
+            if ("failsafe" in data) document.getElementById("failsafe").innerText = "Failsafe: " + (data.failsafe > 0 ? "true" : "false");
             if (data.type === "params") {
-              for (const key in data) {
+                for (const key in data) {
                 if (key === "type") continue;
                 const el = document.querySelector(`[name="${key}"]`);
                 if (!el) continue;
                 el.type === "checkbox" ? el.checked = data[key] : el.value = String(data[key]);
-              }
+                }
             }
-          } catch (e) {
+            } catch (e) {
             console.log("Not JSON:", event.data);
-          }
+            }
         };
+
+        ws.onclose = function() {
+            console.warn("WebSocket отключен. Попытка переподключения через " + reconnectInterval / 1000 + " сек...");
+            setTimeout(initWebSocket, reconnectInterval);
+        };
+
+        ws.onerror = function(err) {
+            console.error("WebSocket ошибка:", err);
+            ws.close();
+        };
+        }
     
         function saveSettings() {
-          if (!confirm("Вы уверены, что хотите сохранить настройки?")) return;
-          const form = document.getElementById("paramForm");
-          const formData = new FormData(form);
-          let obj = { type: "setParams" };
-          formData.forEach((v, k) => {
-            obj[k] = v === "on" ? true : isNaN(v) ? v : Number(v);
-          });
-          ws.send(JSON.stringify(obj));
-          alert("Настройки отправлены.");
+            if (!confirm("Вы уверены, что хотите сохранить настройки?")) return;
+            const form = document.getElementById("paramForm");
+            const formData = new FormData(form);
+            let obj = { type: "setParams" };
+
+            formData.forEach((v, k) => {
+                obj[k] = isNaN(v) ? v : Number(v);
+            });
+
+            form.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                obj[cb.name] = cb.checked;
+            });
+
+            console.log("Отправка настроек:", obj); // Добавлено для отладки
+            ws.send(JSON.stringify(obj));
+            alert("Настройки отправлены.");
         }
     
         function reboot() {
@@ -292,10 +332,14 @@ const char html[] PROGMEM = R"rawliteral(
           if (!confirm("Отключить точку доступа и остановить сервер?")) return;
           ws.send(JSON.stringify({ type: "shutdown" }));
         }
-    
-        ws.onopen = () => ws.send(JSON.stringify({ type: "getParams" }));
+
+        function resetEeprom() {
+          if (!confirm("Записать в EEPROM значения по умолчанию? Это полностью сотрет конфигурацию, и контроллер будет перезагружен!")) return;
+          ws.send(JSON.stringify({ type: "reseteeprom" }));
+        }
     
         window.onload = () => {
+          initWebSocket();  
           const channels = ["throttle", "gearbox", "frontLock", "rearLock", "enableServer"];
           channels.forEach(name => {
             const sel = document.getElementById(`${name}Channel`);

@@ -27,6 +27,8 @@ void WebServer::enable()
   if (serverActive)
     return;
 
+  WiFi.setAutoConnect(false);
+  WiFi.setAutoReconnect(false);
   WiFi.softAP(ssid, password);
   Serial.println("SoftAP started: " + WiFi.softAPIP().toString());
 
@@ -91,7 +93,7 @@ String getStringFromPin(int pin)
 }
 
 // Метод для установки коллбэка
-void WebServer::setSettingsCallback(std::function<void()> callback)
+void WebServer::setSettingsCallback(std::function<void(bool)> callback)
 {
   settingsCallback = callback;
 }
@@ -148,6 +150,8 @@ void WebServer::handleWSMessage(uint8_t clientNum, uint8_t *data, size_t len)
     sets.stopLightDelay = doc["stopLightDelay"] | 3000;
     sets.tailLightPwm = constrain(doc["tailLightPwm"] | 100, 0, 100);
     sets.throttleHysteresis = doc["throttleHysteresis"] | 0;
+    sets.headlightAtStart = doc["headlightAtStart"] | true;
+    sets.foglightAtStart = doc["foglightAtStart"] | true;
 
     sets.frontHazardLights = getPinFromString(doc["frontHazardLights"] | "d4");
     sets.rearHazardLights = getPinFromString(doc["rearHazardLights"] | "d5");
@@ -156,26 +160,23 @@ void WebServer::handleWSMessage(uint8_t clientNum, uint8_t *data, size_t len)
     sets.stopLights = getPinFromString(doc["stopLights"] | "d12");
     sets.rearLights = getPinFromString(doc["rearLights"] | "d13");
 
-    Serial.println("Настройки обновлены.");
-
-    // Если есть коллбэк, передаем обновленные настройки наружу
-    if (settingsCallback)
-      settingsCallback();
+    saveSettingsFlag = true;
   }
   else if (type == "reboot")
   {
-    Serial.println("Reboot command received");
-    WiFi.forceSleepBegin();
-    wdt_reset();
-    ESP.restart();
+    rebootFlag = true;
   }
   else if (type == "shutdown")
   {
-    disable();
+    disableServerFlag = true;
   }
   else if (type == "wtfmem")
   {
-    sendHeapUpdate();
+    getMemFlag = true;
+  }
+  else if( type == "reseteeprom")
+  {
+    eraseSettingsFlag = true;
   }
   else if (type == "getParams")
   {
@@ -207,6 +208,8 @@ void WebServer::handleWSMessage(uint8_t clientNum, uint8_t *data, size_t len)
     doc["stopLightDelay"] = sets.stopLightDelay;
     doc["tailLightPwm"] = sets.tailLightPwm;
     doc["throttleHysteresis"] = sets.throttleHysteresis;
+    doc["headlightAtStart"] = sets.headlightAtStart;
+    doc["foglightAtStart"] = sets.foglightAtStart;
 
     doc["frontHazardLights"] = getStringFromPin(sets.frontHazardLights);
     doc["rearHazardLights"] = getStringFromPin(sets.rearHazardLights);
@@ -217,6 +220,8 @@ void WebServer::handleWSMessage(uint8_t clientNum, uint8_t *data, size_t len)
     String out;
     serializeJson(doc, out);
     webSocket.sendTXT(clientNum, out);
+
+    updateInitValuesFlag = true;
   }
 }
 
@@ -244,13 +249,29 @@ void WebServer::sendHeapUpdate()
   webSocket.broadcastTXT(json);
 }
 
-void WebServer::sendSbusFailUpdate(unsigned int fails)
+
+void WebServer::sendSbusFailUpdate(long fails, bool failsafe, bool force)
 {
-  if (!serverActive || millis() - lastSbusFails < 300)
-    return;
-  lastSbusFails = millis();
-  String json = "{\"sbusFail\":" + String(fails) + "}";
-  webSocket.broadcastTXT(json);
+  if(!force)
+  {
+    if (!serverActive || millis() - lastSbusFails < 1000) return;
+    lastSbusFails = millis();
+  }
+
+  if(someFails < fails || force)
+  {
+    someFails = fails;
+    String json = "{\"sbusFail\":" + String(fails) + "}";
+    webSocket.broadcastTXT(json);
+  }
+
+  if(isFailsafe != failsafe || force)
+  {
+    isFailsafe = failsafe;
+    int s = isFailsafe ? 1 : 0;
+    String json = "{\"failsafe\":" + String(s) + "}";
+    webSocket.broadcastTXT(json);
+  }
 }
 
 unsigned long lastUptimeSent = 0;
@@ -289,5 +310,43 @@ void WebServer::handleLoop()
     String json;
     serializeJson(doc, json);
     webSocket.broadcastTXT(json);
+  }
+
+  if(saveSettingsFlag)
+  {
+    // Если есть коллбэк, передаем обновленные настройки наружу
+    if (settingsCallback) settingsCallback(false);
+    Serial.println("Настройки обновлены.");
+    saveSettingsFlag = false;
+  }
+  if (rebootFlag)
+  {
+    Serial.println("Reboot command received");
+    WiFi.forceSleepBegin();
+    wdt_reset();
+    ESP.restart();
+    rebootFlag = false;
+  }
+  if (disableServerFlag)
+  {
+    disable();
+    disableServerFlag = false;
+  }
+  if (getMemFlag)
+  {
+    sendHeapUpdate();
+    getMemFlag = false;
+  }
+  if(eraseSettingsFlag)
+  {
+    if (settingsCallback) settingsCallback(true);
+    Serial.println("Настройки сброшены.");
+    eraseSettingsFlag = false;
+  }
+  if (updateInitValuesFlag)
+  {
+    sendHeapUpdate();
+    sendSbusFailUpdate(someFails, isFailsafe, true);
+    updateInitValuesFlag = false;
   }
 }

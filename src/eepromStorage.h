@@ -16,16 +16,19 @@ struct Settings {
 
     int blinkDelayOn = 700;  // по умолчанию
     int blinkDelayOff = 700; // по умолчанию
-    int stopLightDelay = 3000; // по умолчанию
+    int stopLightDelay = 700; // по умолчанию
     int tailLightPwm = 20; // 0-100
     int throttleHysteresis = 50; // +-100
 
-    int frontHazardLights = 4;  // d4 (например)
-    int rearHazardLights = 5;   // d5
+    int frontHazardLights = 12;  // d4 (например)
+    int rearHazardLights = 4;   // d5
     int foglight = 14;      // d14
-    int headlight = 15;      // d15
-    int stopLights = 12;        // d12
-    int rearLights = 13;        // d13
+    int headlight = 13;      // d13
+    int stopLights = 5;        // d12
+    int rearLights = 15;        // d15
+
+    bool headlightAtStart = true;
+    bool foglightAtStart = true;
 };
 
 
